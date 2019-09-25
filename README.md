@@ -25,3 +25,8 @@ registry path.
 If on MAC please provide the games bundle_id which can be found by calling
 
 ```/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -dump | grep {game_name}```
+
+## Installation
+
+### Windows
+Extract to `%LOCALAPPDATA%\GOG.com\Galaxy\plugins\installed\battlenet`
