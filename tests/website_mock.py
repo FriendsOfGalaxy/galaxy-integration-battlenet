@@ -95,6 +95,25 @@ class WebsiteClientMock(AsyncMock):
         "displayOrder": 1
     },
     {
+        "titleId": 1329875278,
+        "localizedGameName": "Call of Duty: Modern Warfare",
+        "gameAccountName": null,
+        "gameAccountUniqueId": {
+            "gameAccountId": 123,
+            "gameServiceRegionId": 2,
+            "programId": 1329875278
+        },
+        "gameAccountRegion": "EU",
+        "regionalGameFranchiseIconFilename": "cod-mw.svg",
+        "gameAccountStatus": "Good",
+        "lastPlayedDateMillis": 1529516420000,
+        "titleHasSubscriptions": false,
+        "titleHasGameTime": false,
+        "accountSubscriptionView": null,
+        "gameTimeView": null,
+        "displayOrder": 1000
+    },
+    {
         "titleId": 17459,
         "localizedGameName": "Diablo\u00ae\u00a0III",
         "gameAccountName": null,

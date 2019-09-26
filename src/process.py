@@ -1,6 +1,6 @@
 import psutil
 from typing import Set, Iterable
-from game import InstalledGame
+from local_games import InstalledGame
 from definitions import ClassicGame
 
 

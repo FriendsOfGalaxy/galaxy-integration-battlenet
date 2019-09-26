@@ -1,4 +1,4 @@
-import dataclasses as dc
+﻿import dataclasses as dc
 import json
 import requests
 from typing import Optional
@@ -95,6 +95,7 @@ class _Blizzard(object, metaclass=Singleton):
         BlizzardGame('d3cn', '暗黑破壞神III', '?', 'D3CN', False),
         BlizzardGame('diablo3', 'Diablo III', '17459', 'D3', True),
         BlizzardGame('viper', 'Call of Duty: Black Ops 4', '1447645266', 'VIPR', False),
+        BlizzardGame('odin_beta', 'Call of Duty: Modern Warfare', '1329875278', 'ODIN', False),
         ClassicGame('d2', 'Diablo® II', 'Diablo II', False, 'Diablo II', 'DisplayIcon', "Game.exe", "com.blizzard.diabloii"),
         ClassicGame('d2LOD', 'Diablo® II: Lord of Destruction®', 'Diablo II', False),
         ClassicGame('w3ROC', 'Warcraft® III: Reign of Chaos',  'Warcraft III', False, 'Warcraft III', 'InstallLocation', 'Warcraft III.exe', 'com.blizzard.WarcraftIII'),

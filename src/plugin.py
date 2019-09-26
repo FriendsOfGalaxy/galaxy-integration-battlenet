@@ -6,13 +6,9 @@ import multiprocessing
 import webbrowser
 import requests
 import requests.cookies
-import pathlib
 import logging as log
 import subprocess
-import errno
 
-from threading import Thread
-from threading import Lock
 
 from version import __version__ as version
 
@@ -21,90 +17,35 @@ from galaxy.api.plugin import Plugin, create_and_run_plugin
 from galaxy.api.types import Achievement, Game, LicenseInfo, LocalGame, FriendInfo
 
 from process import ProcessProvider
-from local_client import LocalClient, Uninstaller, ClientNotInstalledError
-from parsers import ConfigParser, DatabaseParser
+from local_client_base import ClientNotInstalledError
+from local_client import LocalClient
 from backend import BackendClient, AccessTokenExpired
 from definitions import Blizzard, DataclassJSONEncoder, License_Map, ClassicGame
-from game import InstalledGame
-from watcher import FileWatcher
-from consts import CONFIG_PATH, AGENT_PATH, SYSTEM
+from consts import SYSTEM
 from consts import Platform as pf
 from http_client import AuthenticatedHttpClient
 from social import SocialFeatures
 from galaxy.api.errors import ( AuthenticationRequired,
     BackendTimeout, BackendNotAvailable, BackendError, NetworkError, UnknownError, InvalidCredentials
 )
-
-
-def load_product_db(product_db_path):
-    with open(product_db_path, 'rb') as f:
-        pdb = f.read()
-    return pdb
-
-
-def load_config(battlenet_config_path):
-    with open(battlenet_config_path, 'rb') as f:
-        config = json.load(f)
-    return config
+import time
 
 
 class BNetPlugin(Plugin):
-    PRODUCT_DB_PATH = pathlib.Path(AGENT_PATH) / 'product.db'
-    CONFIG_PATH = CONFIG_PATH
-
     def __init__(self, reader, writer, token):
         super().__init__(Platform.Battlenet, version, reader, writer, token)
-
-        log.info(f"Starting Battle.net plugin, version {version}")
-
-        self.bnet_client = None
-        self.local_client = LocalClient()
+        self.local_client = LocalClient(self._update_statuses)
         self.authentication_client = AuthenticatedHttpClient(self)
         self.backend_client = BackendClient(self, self.authentication_client)
         self.social_features = SocialFeatures(self.authentication_client)
-        self.error_state = False
-
-        self.running_task = None
-
-        self.database_parser = None
-        self.config_parser = None
-        self.uninstaller = None
 
         self.owned_games_cache = []
-
-        self._classic_games_thread = None
-        self._battlenet_games_thread = None
-        self._installed_battlenet_games = {}
-        self._installed_battlenet_games_lock = Lock()
-
-        self.installed_games = self._parse_local_data()
         self.watched_running_games = set()
-
-        self.notifications_enabled = False
-        loop = asyncio.get_event_loop()
-        loop.create_task(self._register_local_data_watcher())
-
-    async def _register_local_data_watcher(self):
-        async def ping(event, interval):
-            while True:
-                await asyncio.sleep(interval)
-                if not self.watched_running_games:
-                    if not event.is_set():
-                        event.set()
-
-        parse_local_data_event = asyncio.Event()
-        FileWatcher(self.CONFIG_PATH, parse_local_data_event, interval=1)
-        FileWatcher(self.PRODUCT_DB_PATH, parse_local_data_event, interval=2.5)
-        asyncio.create_task(ping(parse_local_data_event, 30))
-        while True:
-            await parse_local_data_event.wait()
-            refreshed_games = self._parse_local_data()
-            if not self.notifications_enabled:
-                self._update_statuses(refreshed_games, self.installed_games)
-            self.installed_games = refreshed_games
-            parse_local_data_event.clear()
+        self.enable_notifications = False
 
     async def _notify_about_game_stop(self, game, starting_timeout):
+        if not self.enable_notifications:
+            return
         id_to_watch = game.info.id
 
         if id_to_watch in self.watched_running_games:
@@ -123,6 +64,8 @@ class BNetPlugin(Plugin):
             self.watched_running_games.remove(id_to_watch)
 
     def _update_statuses(self, refreshed_games, previous_games):
+        if not self.enable_notifications:
+            return
         for blizz_id, refr in refreshed_games.items():
             prev = previous_games.get(blizz_id, None)
 
@@ -153,143 +96,6 @@ class BNetPlugin(Plugin):
                 state = LocalGameState.None_
                 self.update_local_game_status(LocalGame(blizz_id, state))
 
-    def _load_local_files(self):
-        try:
-            product_db = load_product_db(self.PRODUCT_DB_PATH)
-            self.database_parser = DatabaseParser(product_db)
-        except FileNotFoundError as e:
-            log.warning(f"product.db not found: {repr(e)}")
-            return False
-        except WindowsError as e:
-            # 5 WindowsError access denied
-            if e.winerror == 5:
-                log.warning(f"product.db not accessible: {repr(e)}")
-                self.config_parser = ConfigParser(None)
-                return False
-            else:
-                raise ()
-        except OSError as e:
-            if e.errno == errno.EACCES:
-                log.warning(f"product.db not accessible: {repr(e)}")
-                self.config_parser = ConfigParser(None)
-                return False
-            else:
-                raise ()
-        else:
-            if self.local_client.is_installed != self.database_parser.battlenet_present:
-                self.local_client.refresh()
-
-        try:
-            config = load_config(self.CONFIG_PATH)
-            self.config_parser = ConfigParser(config)
-        except FileNotFoundError as e:
-            log.warning(f"config file not found: {repr(e)}")
-            self.config_parser = ConfigParser(None)
-            return False
-        except WindowsError as e:
-            # 5 WindowsError access denied
-            if e.winerror == 5:
-                log.warning(f"config file not accessible: {repr(e)}")
-                self.config_parser = ConfigParser(None)
-                return False
-            else:
-                raise ()
-        except OSError as e:
-            if e.errno == errno.EACCES:
-                log.warning(f"config file not accessible: {repr(e)}")
-                self.config_parser = ConfigParser(None)
-                return False
-            else:
-                raise ()
-        return True
-
-    def _get_battlenet_installed_games(self):
-
-        def _add_battlenet_game(config_game, db_game):
-            if config_game.uninstall_tag != db_game.uninstall_tag:
-                return None
-            try:
-                blizzard_game = Blizzard[config_game.uid]
-            except KeyError:
-                log.warning(f'[{config_game.uid}] is not known blizzard game. Skipping')
-                return None
-            try:
-                log.info(f"Adding {blizzard_game.blizzard_id} {blizzard_game.name} to installed games")
-                return InstalledGame(
-                    blizzard_game,
-                    config_game.uninstall_tag,
-                    db_game.version,
-                    config_game.last_played,
-                    db_game.install_path,
-                    db_game.playable
-                )
-            except FileNotFoundError as e:
-                log.warning(str(e) + '. Probably outdated product.db after uninstall. Skipping')
-            return None
-
-        games = {}
-        for db_game in self.database_parser.games:
-            for config_game in self.config_parser.games:
-                installed_game = _add_battlenet_game(config_game, db_game)
-                if installed_game:
-                    games[installed_game.info.id] = installed_game
-        self._installed_battlenet_games_lock.acquire()
-        self._installed_battlenet_games = games
-        self._installed_battlenet_games_lock.release()
-
-    def _parse_local_data(self):
-        """Game is considered as installed when present in both config and product.db"""
-        games = {}
-        # give threads 4 seconds to finish
-        join_timeout = 4
-
-        if not self._classic_games_thread or not self._classic_games_thread.isAlive():
-            self._classic_games_thread = Thread(target=self.local_client.find_classic_games, daemon=True)
-            self._classic_games_thread.start()
-            log.info("Started classic games thread")
-
-        if not self._load_local_files():
-            self._classic_games_thread.join(join_timeout)
-            if not self.local_client.classics_lock.acquire(False):
-                return []
-            else:
-                installed_classics = self.local_client.installed_classics
-                self.local_client.classics_lock.release()
-                return installed_classics
-
-        try:
-            if SYSTEM == pf.WINDOWS and self.uninstaller is None:
-                uninstaller_path = pathlib.Path(AGENT_PATH) / 'Blizzard Uninstaller.exe'
-                self.uninstaller = Uninstaller(uninstaller_path)
-        except FileNotFoundError as e:
-            log.warning('uninstaller not found' + str(e))
-
-        try:
-            if self.local_client.is_installed != self.database_parser.battlenet_present:
-                self.local_client.refresh()
-            log.info(f"Games found in db {self.database_parser.games}")
-            log.info(f"Games found in config {self.config_parser.games}")
-
-            if not self._battlenet_games_thread or not self._battlenet_games_thread.isAlive():
-                self._battlenet_games_thread = Thread(target=self._get_battlenet_installed_games, daemon=True)
-                self._battlenet_games_thread.start()
-                log.info("Started classic games thread")
-        except Exception as e:
-            log.exception(str(e))
-        finally:
-            self._classic_games_thread.join(join_timeout)
-            self._battlenet_games_thread.join(join_timeout)
-
-            if self.local_client.classics_lock.acquire(False):
-                games = self.local_client.installed_classics
-                self.local_client.classics_lock.release()
-
-            if self._installed_battlenet_games_lock.acquire(False):
-                games = {**self._installed_battlenet_games, **games}
-                self._installed_battlenet_games_lock.release()
-
-            return games
-
     def log_out(self):
         if self.backend_client:
             asyncio.create_task(self.authentication_client.shutdown())
@@ -306,7 +112,7 @@ class BNetPlugin(Plugin):
         if not self.authentication_client.is_authenticated():
             raise AuthenticationRequired()
 
-        installed_game = self.installed_games.get(game_id, None)
+        installed_game = self.local_client.get_installed_games().get(game_id, None)
         if installed_game and os.access(installed_game.install_path, os.F_OK):
             log.warning("Received install command on an already installed game")
             return await self.launch_game(game_id)
@@ -352,7 +158,7 @@ class BNetPlugin(Plugin):
             self._open_battlenet_at_id(game_id)
         else:
             try:
-                installed_game = self.installed_games.get(game_id, None)
+                installed_game = self.local_client.get_installed_games().get(game_id, None)
 
                 if installed_game is None or not os.access(installed_game.install_path, os.F_OK):
                     log.error(f'Cannot uninstall {Blizzard[game_id].uid}')
@@ -360,12 +166,12 @@ class BNetPlugin(Plugin):
                     return
 
                 if not isinstance(installed_game.info, ClassicGame):
-                    if self.uninstaller is None:
+                    if self.local_client.uninstaller is None:
                         raise FileNotFoundError('Uninstaller not found')
 
                 uninstall_tag = installed_game.uninstall_tag
-                client_lang = self.config_parser.locale_language
-                self.uninstaller.uninstall_game(installed_game, uninstall_tag, client_lang)
+                client_lang = self.local_client.config_parser.locale_language
+                self.local_client.uninstaller.uninstall_game(installed_game, uninstall_tag, client_lang)
 
             except Exception as e:
                 log.exception(f'Uninstalling game {game_id} failed: {e}')
@@ -375,11 +181,11 @@ class BNetPlugin(Plugin):
             raise AuthenticationRequired()
 
         try:
-            if self.installed_games is None:
+            if self.local_client.get_installed_games() is None:
                 log.error(f'Launching game that is not installed: {game_id}')
                 return await self.install_game(game_id)
 
-            game = self.installed_games.get(game_id, None)
+            game = self.local_client.get_installed_games().get(game_id, None)
             if game is None:
                 log.error(f'Launching game that is not installed: {game_id}')
                 return await self.install_game(game_id)
@@ -528,22 +334,30 @@ class BNetPlugin(Plugin):
             raise
 
     async def get_local_games(self):
+        timeout = time.time() + 2
 
         try:
-            local_games = []
-            running_games = ProcessProvider().update_games_processes(self.installed_games.values())
-            log.info(f"Installed games {self.installed_games.items()}")
+            translated_installed_games = []
+
+            while not self.local_client.games_finished_parsing():
+                await asyncio.sleep(0.1)
+                if time.time() >= timeout:
+                    break
+
+            running_games = self.local_client.get_running_games()
+            instaled_games = self.local_client.get_installed_games()
+            log.info(f"Installed games {instaled_games.items()}")
             log.info(f"Running games {running_games}")
-            for id_, game in self.installed_games.items():
+            for id_, game in instaled_games.items():
                 if game.playable:
                     state = LocalGameState.Installed
                     if id_ in running_games:
                         state |= LocalGameState.Running
                 else:
                     state = LocalGameState.None_
-                local_games.append(LocalGame(id_, state))
-
-            return local_games
+                translated_installed_games.append(LocalGame(id_, state))
+            self.local_client.installed_games_cache = instaled_games
+            return translated_installed_games
 
         except Exception as e:
             log.exception(f"failed to get local games: {str(e)}")
@@ -634,21 +448,15 @@ class BNetPlugin(Plugin):
     #         log.exception(str(e))
     #         return []
 
-    async def _tick_runner(self):
-        if not self.bnet_client:
+    async def launch_platform_client(self):
+        if self.local_client.is_running():
+            log.info("Launch platform client called but client is already running")
             return
-        try:
-            self.error_state = await self.bnet_client.tick()
-        except Exception as e:
-            self.error_state = True
-            log.exception(f"error state: {str(e)}")
-            raise
+        self.local_client.open_battlenet()
+        await self.local_client.prevent_battlenet_from_showing()
 
-    def tick(self):
-        if not self.error_state and (not self.running_task or self.running_task.done()):
-            self.running_task = asyncio.create_task(self._tick_runner())
-        elif self.error_state:
-            sys.exit(1)
+    async def shutdown_platform_client(self):
+        await self.local_client.shutdown_platform_client()
 
     def shutdown(self):
         log.info("Plugin shutdown.")
