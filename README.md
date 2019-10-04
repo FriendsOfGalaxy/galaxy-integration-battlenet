@@ -7,7 +7,7 @@
 	- Windows: `%LOCALAPPDATA%\GOG.com\Galaxy\plugins\installed\battlenet`
 	- MacOS: `${HOME}/Library/Application Support/GOG.com/Galaxy/plugins/installed/battlenet`
 3. Unpack plugin to the plugin folder created in step 2.
-4. Re-connect(or re-start) the GLX
+4. Re-connect(or re-start) your GOG Galaxy Client 
 
 ## Installation
 Install required packages for building and testing:
