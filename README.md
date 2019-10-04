@@ -9,6 +9,7 @@
 3. Unpack plugin to the plugin folder created in step 2.
 4. Re-connect(or re-start) the GLX
 
+## Installation
 Install required packages for building and testing:
 ```bash
 pip install -r requirements/dev.txt
