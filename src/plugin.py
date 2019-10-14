@@ -41,10 +41,10 @@ class BNetPlugin(Plugin):
 
         self.owned_games_cache = []
         self.watched_running_games = set()
-        self.enable_notifications = False
+        self.local_games_called = False
 
     async def _notify_about_game_stop(self, game, starting_timeout):
-        if not self.enable_notifications:
+        if not self.local_games_called:
             return
         id_to_watch = game.info.id
 
@@ -64,7 +64,7 @@ class BNetPlugin(Plugin):
             self.watched_running_games.remove(id_to_watch)
 
     def _update_statuses(self, refreshed_games, previous_games):
-        if not self.enable_notifications:
+        if not self.local_games_called:
             return
         for blizz_id, refr in refreshed_games.items():
             prev = previous_games.get(blizz_id, None)
@@ -177,8 +177,8 @@ class BNetPlugin(Plugin):
                 log.exception(f'Uninstalling game {game_id} failed: {e}')
 
     async def launch_game(self, game_id):
-        if not self.authentication_client.is_authenticated():
-            raise AuthenticationRequired()
+        if not self.local_games_called:
+            await self.get_local_games()
 
         try:
             if self.local_client.get_installed_games() is None:
@@ -364,7 +364,7 @@ class BNetPlugin(Plugin):
             raise
 
         finally:
-            self.enable_notifications = True
+            self.local_games_called = True
 
     async def _get_wow_achievements(self):
         achievements = []

@@ -1,6 +1,6 @@
 -r app.txt
 invoke==1.2.0
-pytest==4.2.0
+pytest==4.3.0
 pytest-flakes==4.0.0
 pytest-pythonpath==0.7.3
 pip-tools==3.6.1
