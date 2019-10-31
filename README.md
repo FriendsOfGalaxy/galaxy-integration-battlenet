@@ -30,3 +30,6 @@ If on MAC please provide the games bundle_id which can be found by calling
 
 ### Windows
 Extract to `%LOCALAPPDATA%\GOG.com\Galaxy\plugins\installed\battlenet`
+
+### macOS
+Extract to `~/Library/Application Support/GOG.com/Galaxy/plugins/installed`
