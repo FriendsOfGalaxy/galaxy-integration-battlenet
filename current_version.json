@@ -1,12 +1,12 @@
 {
-    "tag_name": "v0.40",
+    "tag_name": "v0.41",
     "assets": [
         {
-            "browser_download_url": "https://github.com/FriendsOfGalaxy/galaxy-integration-battlenet/releases/download/v0.40/windows.zip",
+            "browser_download_url": "https://github.com/FriendsOfGalaxy/galaxy-integration-battlenet/releases/download/v0.41/windows.zip",
             "name": "windows.zip"
         },
         {
-            "browser_download_url": "https://github.com/FriendsOfGalaxy/galaxy-integration-battlenet/releases/download/v0.40/macos.zip",
+            "browser_download_url": "https://github.com/FriendsOfGalaxy/galaxy-integration-battlenet/releases/download/v0.41/macos.zip",
             "name": "macos.zip"
         }
     ]
