@@ -18,3 +18,4 @@ sc2.json
 wow.json
 venv
 .DS_Store
+.mypy_cache/

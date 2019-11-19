@@ -97,8 +97,10 @@ class WinLocalClient(BaseLocalClient):
                 break
             await asyncio.sleep(check_frequency_delay)
 
-    def shutdown_platform_client(self):
+    async def shutdown_platform_client(self):
         subprocess.Popen("taskkill.exe /im \"Battle.net.exe\"")
+        # Battle.net probably never exits on WM_CLOSE so make sure it will be hidden
+        await self.prevent_battlenet_from_showing()
 
     def _check_for_game_process(self, game):
         try:
@@ -178,7 +180,7 @@ class MacLocalClient(BaseLocalClient):
             await asyncio.sleep(check_frequency_delay)
         log.info("Timed out on prevent battlenet from showing")
 
-    def shutdown_platform_client(self):
+    async def shutdown_platform_client(self):
         subprocess.Popen("osascript -e 'quit app \"Battle.net\"'", shell=True)
 
     @property

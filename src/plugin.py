@@ -458,9 +458,9 @@ class BNetPlugin(Plugin):
     async def shutdown_platform_client(self):
         await self.local_client.shutdown_platform_client()
 
-    def shutdown(self):
+    async def shutdown(self):
         log.info("Plugin shutdown.")
-        asyncio.create_task(self.authentication_client.shutdown())
+        await self.authentication_client.shutdown()
 
 
 def main():
