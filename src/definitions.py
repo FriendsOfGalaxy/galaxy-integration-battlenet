@@ -10,7 +10,8 @@ License_Map = {
     "Good": LicenseType.SinglePurchase,
     "Inactive": LicenseType.SinglePurchase,
     "Banned": LicenseType.SinglePurchase,
-    "Free": LicenseType.FreeToPlay
+    "Free": LicenseType.FreeToPlay,
+    "AccountLock": LicenseType.SinglePurchase
 }
 
 class DataclassJSONEncoder(json.JSONEncoder):
